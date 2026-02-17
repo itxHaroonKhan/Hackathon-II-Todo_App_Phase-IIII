@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "todo-backend.fullname" . }}-test
+  annotations:
+    "helm.sh/hook": test
+data:
+  run_test.sh: |
+    @test "Backend Health Check" {
+      url="http://{{ include "todo-backend.fullname" . }}:{{ .Values.service.port }}/health"
+      code=$(wget --server-response --spider --timeout=5 "${url}" 2>&1 | grep "HTTP/" | awk '{print $2}')
+      [ "$code" = "200" ]
+    }
+
+    @test "Backend Service Port Check" {
+      nc -z {{ include "todo-backend.fullname" . }} {{ .Values.service.port }}
+      [ $? -eq 0 ]
+    }

@@ -1,0 +1,32 @@
+Todo Application successfully deployed!
+
+Backend Service:
+  {{- if .Values.backend.enabled }}
+  - URL: http://{{ include "todo-app.fullname" . }}-todo-backend.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.backend.service.port }}
+  - Port: {{ .Values.backend.service.port }}
+  {{- end }}
+
+Frontend Service:
+  {{- if and .Values.frontend.enabled .Values.frontend.ingress.enabled }}
+  - URL: http://{{ (index .Values.frontend.ingress.hosts 0).host }}
+  {{- else if .Values.frontend.enabled }}
+  - URL: http://{{ include "todo-app.fullname" . }}-todo-frontend.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.frontend.service.port }}
+  - Port: {{ .Values.frontend.service.port }}
+  {{- end }}
+
+To access the application from your local machine, you can use port forwarding:
+
+{{- if .Values.frontend.enabled }}
+kubectl port-forward svc/{{ include "todo-app.fullname" . }}-todo-frontend {{ .Values.frontend.service.targetPort }}:{{ .Values.frontend.service.port }} -n {{ .Release.Namespace }}
+{{- end }}
+
+For Minikube access:
+{{- if .Values.frontend.enabled }}
+minikube service {{ include "todo-app.fullname" . }}-todo-frontend -n {{ .Release.Namespace }}
+{{- end }}
+
+{{- if and .Values.backend.enabled .Values.backend.ingress.enabled }}
+Backend endpoint (if ingress is enabled):
+  - URL: http://{{ (index .Values.backend.ingress.hosts 0).host }}
+  - Path: {{ (index (index .Values.backend.ingress.hosts 0).paths 0).path }}
+{{- end }}

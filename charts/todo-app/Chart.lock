@@ -1,0 +1,9 @@
+dependencies:
+- name: todo-backend
+  repository: file://../todo-backend
+  version: 0.1.0
+- name: todo-frontend
+  repository: file://../todo-frontend
+  version: 0.1.0
+digest: sha256:6488534218dea50d3313375259da505c9c5714dd7daa32ffaca9b29c1154bcdf
+generated: "2026-02-16T06:30:08.214217141-08:00"

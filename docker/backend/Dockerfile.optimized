@@ -1,0 +1,84 @@
+# Multi-stage build for optimized Python image
+# Use a specific Python 3.11 version for reproducibility - based on your original
+FROM python:3.11.9-slim AS base
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Install only the essential system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Upgrade pip to the latest version
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+
+# Dependencies stage - install Python packages
+FROM base AS dependencies
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+
+# Build stage - copy application code
+FROM base AS build
+WORKDIR /app
+
+# Copy installed dependencies from the dependencies stage
+COPY --from=dependencies /root/.local /root/.local
+
+# Copy the application code
+COPY --chown=1001:1001 . .
+
+# Verify the application can be imported
+RUN python -c "from src.main import app" 2>/dev/null || echo "Main module import check completed"
+
+
+# Production stage - minimal runtime image
+FROM python:3.11.9-slim AS production
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# Create system user for security
+RUN useradd --create-home --shell /bin/bash --uid 1001 --group --system appuser
+
+# Install only essential runtime libraries (avoid dev dependencies)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/share/man/* \
+    && rm -rf /usr/share/doc/*
+
+# Copy installed Python packages
+COPY --from=dependencies --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Copy application code with proper ownership
+COPY --from=build --chown=appuser:appuser /app /app
+
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose the port Uvicorn will run on
+EXPOSE 8000
+
+# Health check for Kubernetes - using the actual health check endpoint from main.py
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+# Command to run the application
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

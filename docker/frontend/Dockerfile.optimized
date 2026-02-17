@@ -1,0 +1,62 @@
+# Use official Node.js runtime as the base image with specific version
+FROM node:18.20.4-alpine AS deps
+WORKDIR /app
+
+# Install dependencies based on the preferred package manager
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production && npm cache clean --force
+
+# Production build stage
+FROM node:18.20.4-alpine AS builder
+WORKDIR /app
+
+# Install all dependencies for build
+COPY package.json package-lock.json* ./
+RUN npm ci && npm cache clean --force
+
+# Copy application code
+COPY . .
+
+# Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Disable telemetry at build time
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Build the application
+RUN npm run build
+
+# Production image, copy only necessary files
+FROM node:18.20.4-alpine AS runner
+WORKDIR /app
+
+# Set non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Copy required files from the build stage
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./output
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Set environment variable for port
+ENV PORT=3000
+
+# Set working directory to the standalone output
+WORKDIR /app/output
+
+# Health check - the path might need to be updated based on your actual health check endpoint
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node healthcheck.js || wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+
+# Start the application
+CMD ["node", "server.js"]
